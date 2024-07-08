@@ -1,5 +1,16 @@
 # active-directory
 
+## Configuration
+
+Configuration is set via `config.rb` and by default uses the domain name `CONTOSO.COM` and an ip range of 192.168.56.50 - 192.168.56.60 for virtual machines.
+
+All Windows virtual machines are pre-installed with Sysmon and `files/sysmonconfig-export.xml`, Google Chrome, Notepad++, BgInfo.
+
+Default local credentials, configurable via `config.rb`:
+
+- Windows: `vagrant:vagrant`
+- Linux: `root:root`
+
 ## Environment
 
 This Vagrantfile sets up a vulnerable Active Directory environment containing:
@@ -17,17 +28,6 @@ This Vagrantfile sets up a vulnerable Active Directory environment containing:
 | attackbox     | attackbox                                                                                                             | Kali Linux top10 |
 
 ![active-directory](img/environment.png)
-
-## Configuration
-
-Configuration is set via `config.rb` and by default uses the domain name `CONTOSO.COM` and an ip range of 192.168.56.50 - 192.168.56.60 for virtual machines.
-
-All Windows virtual machines are pre-installed with Sysmon and `files/sysmonconfig-export.xml`, Google Chrome, Notepad++, BgInfo.
-
-Default local credentials, configurable via `config.rb`:
-
-- Windows: `vagrant:vagrant`
-- Linux: `root:root`
 
 ## Usage
 

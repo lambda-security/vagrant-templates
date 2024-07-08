@@ -1,0 +1,82 @@
+{
+  "variables": {
+    "iso_path": "{{pwd}}/iso/kali-linux-2024.2-installer-everything-amd64.iso",
+    "iso_sha256": "sha256:c49ede57d4ba42f237f2b2582169d9abf42580dd235717395a3e6674454623e9",
+    "timestamp": "{{isotime `2006-01-02`}}",
+    "headless": "false",
+    "boot_wait": "5s",
+    
+    "name": "base-box-kali-top10-xfce",
+    "answer_file": "kali-preseed-top10-offline-xfce.cfg",
+    "cpu": "4",
+    "ram": "4096",
+    "disk_size": "204800",
+    "virtualbox_guest_os_type": "Debian_64",
+    "communicator_username": "root",
+    "communicator_password": "root",
+    "lowpriv_user": "kali"
+  },
+
+  "builders": [
+    {
+      "type": "virtualbox-iso",
+      "format": "ova",
+      "headless": "{{user `headless`}}",
+      "name": "virtualbox",
+      "vm_name": "{{user `name`}}",
+      "disk_size": "{{user `disk_size`}}",
+      "guest_os_type": "{{user `virtualbox_guest_os_type`}}",
+      "communicator": "ssh",
+      "ssh_username": "{{user `communicator_username`}}",
+      "ssh_password": "{{user `communicator_password`}}",
+      "ssh_pty": true,
+      "ssh_timeout": "120m",
+      "ssh_handshake_attempts": "20",
+      "shutdown_command": "shutdown -hP now",
+      "boot_wait": "{{user `boot_wait`}}",
+      "boot_command": [
+        "<esc><wait>",
+        "install preseed/url=http://{{.HTTPIP}}:{{.HTTPPort}}/{{user `answer_file`}} ",
+        "locale=en_US.UTF-8 debian-installer=en_US.UTF-8 ",
+        "ipv6.disable=1 fb=false auto ",
+        "kbd-chooser/method=us keyboard-configuration/xkb-keymap=us console-keymaps-at/keymap=us ",
+        "netcfg/get_hostname=kali netcfg/get_domain=unassigned-domain debconf/frontend=noninteractive console-setup/ask_detect=false ",
+        "<enter><wait>"
+      ],
+      "iso_urls": [
+        "{{user `iso_path`}}"
+      ],
+      "iso_checksum": "{{user `iso_sha256`}}",
+      "iso_target_path": "{{user `iso_path`}}",
+      "http_directory": "files/answer_files/linux/kali",
+      "output_directory": "base-box_output",
+      "guest_additions_mode": "disable",
+      "vboxmanage": [
+        ["modifyvm", "{{.Name}}", "--nat-localhostreachable1", "on"],
+        ["modifyvm", "{{.Name}}", "--memory", "{{user `ram`}}"],
+        ["modifyvm", "{{.Name}}", "--cpus", "{{user `cpu`}}"],
+        ["modifyvm", "{{.Name}}", "--vram", "256"],
+        ["modifyvm", "{{.Name}}", "--audio-driver", "none"]
+      ],
+      "export_opts": [
+        "--manifest",
+        "--vsys", "0"
+      ]
+    }
+  ],
+
+  "provisioners": [
+    {
+      "type": "shell",
+      "script": "files/scripts/linux/sysprep.sh"
+    }
+  ],
+
+  "post-processors": [
+    {
+      "type": "vagrant",
+      "keep_input_artifact": false,
+      "output": "box/{{user `name`}}.box"
+    }
+  ]
+}

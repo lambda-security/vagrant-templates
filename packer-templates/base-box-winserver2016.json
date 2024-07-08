@@ -1,0 +1,121 @@
+{
+  "variables": {
+    "iso_url": "https://go.microsoft.com/fwlink/p/?LinkID=2195174&clcid=0x409&culture=en-us&country=US",
+    "iso_path": "{{pwd}}/iso/Windows_Server_2016_Datacenter_EVAL_en-us_14393_refresh.iso",
+    "iso_sha256": "sha256:1ce702a578a3cb1ac3d14873980838590f06d5b7101c5daaccbac9d73f1fb50f",
+    "timestamp": "{{isotime `2006-01-02`}}",
+    "headless": "false",
+    "boot_wait": "5s",
+    
+    "name": "base-box-winserver2016",
+    "cpu": "2",
+    "ram": "4096",
+    "disk_size": "102400",
+    "virtualbox_guest_os_type": "Windows2016_64",
+    "communicator_username": "vagrant",
+    "communicator_password": "vagrant"
+  },
+
+  "builders": [
+    {
+      "type": "virtualbox-iso",
+      "format": "ova",
+      "headless": "{{user `headless`}}",
+      "name": "virtualbox",
+      "vm_name": "{{user `name`}}",
+      "disk_size": "{{user `disk_size`}}",
+      "guest_os_type": "{{user `virtualbox_guest_os_type`}}",
+      "communicator": "winrm",
+      "winrm_username": "{{user `communicator_username`}}",
+      "winrm_password": "{{user `communicator_password`}}",
+      "winrm_timeout": "99h",
+      "shutdown_command": "C:\\vagrant-sysprep-shutdown.bat",
+      "boot_wait": "{{user `boot_wait`}}",
+      "boot_command": ["<spacebar>", "<spacebar>", "<spacebar>", "<spacebar>", "<spacebar>", "<wait>", "<wait>", "<enter>"],
+      "iso_urls": [
+        "{{user `iso_path`}}",
+        "{{user `iso_url`}}"
+      ],
+      "cd_files": [
+        "files/answer_files/winserver2016/vagrant/autounattend.xml",
+        "files/answer_files/sysprep/vagrant-sysprep.xml",
+        "files/scripts/windows/enable-winrm-http.ps1"
+      ],
+      "iso_checksum": "{{user `iso_sha256`}}",
+      "iso_target_path": "{{user `iso_path`}}",
+      "output_directory": "base-box_output",
+      "guest_additions_mode": "attach",
+      "vboxmanage": [
+        ["modifyvm", "{{.Name}}", "--nat-localhostreachable1", "on"],
+        ["modifyvm", "{{.Name}}", "--firmware", "efi"],
+        ["modifyvm", "{{.Name}}", "--memory", "{{user `ram`}}"],
+        ["modifyvm", "{{.Name}}", "--cpus", "{{user `cpu`}}"],
+        ["modifyvm", "{{.Name}}", "--vram", "256"],
+        ["modifyvm", "{{.Name}}", "--audio-driver", "none"]
+      ],
+      "export_opts": [
+        "--manifest",
+        "--vsys", "0"
+      ]
+    }
+  ],
+
+  "provisioners": [
+    {
+      "type": "powershell",
+      "elevated_user": "{{user `communicator_username`}}",
+      "elevated_password": "{{user `communicator_password`}}",
+      "pause_before": "30s",
+      "script": "files/scripts/windows/vagrant-init.ps1"
+    },
+    {
+      "type": "file",
+      "source": "files/scripts/windows/vagrant-sysprep-shutdown.bat",
+      "destination": "C:\\vagrant-sysprep-shutdown.bat"
+    },
+    {
+      "type": "powershell",
+      "elevated_user": "Administrator",
+      "elevated_password": "{{user `communicator_password`}}",
+      "pause_before": "30s",
+      "valid_exit_codes": ["3010", "1168"],
+      "inline": [
+        "DISM /Online /Set-edition:ServerStandard /ProductKey:WC2BQ-8NRM3-FDDYY-2BFGV-KHKQY /AcceptEula /NoRestart /Quiet"
+      ]
+    },
+    {
+      "type": "windows-restart",
+      "restart_timeout": "30m",
+      "restart_command": "shutdown /r /f /t 0 /c \"packer restart\"",
+      "restart_check_command": "powershell -command \"& {Write-Output 'restarted.'}\""
+    },
+    {
+      "type": "powershell",
+      "elevated_user": "{{user `communicator_username`}}",
+      "elevated_password": "{{user `communicator_password`}}",
+      "pause_before": "30s",
+      "script": "files/scripts/windows/setup-vboxtools.ps1"
+    },
+    {
+      "type": "powershell",
+      "elevated_user": "{{user `communicator_username`}}",
+      "elevated_password": "{{user `communicator_password`}}",
+      "pause_before": "30s",
+      "script": "files/scripts/windows/cleanup.ps1"
+    },
+    {
+      "type": "windows-restart",
+      "restart_timeout": "30m",
+      "restart_command": "shutdown /r /f /t 0 /c \"packer restart\"",
+      "restart_check_command": "powershell -command \"& {Write-Output 'restarted.'}\""
+    }
+  ],
+  
+  "post-processors": [
+    {
+      "type": "vagrant",
+      "keep_input_artifact": false,
+      "output": "box/{{user `name`}}.box"
+    }
+  ]
+}

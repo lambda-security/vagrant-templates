@@ -1,0 +1,7 @@
+*.iso
+*.lock
+*.box
+.vagrant
+*output*
+*.exe
+*.msi

@@ -1,0 +1,387 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+require_relative "config"
+
+# dirty hack because Vagrant doesn't support runtime generated files like packer does with "generated: true"
+#File.write("#{Dir.pwd}/files/Sysmon64.exe", "")
+#File.write("#{Dir.pwd}/files/PsExec64.exe", "")
+#File.write("#{Dir.pwd}/files/BgInfo.exe", "")
+#File.write("#{Dir.pwd}/files/SQL2019-SSEI-Expr.exe", "")
+#File.write("#{Dir.pwd}/files/googlechromestandaloneenterprise64.msi", "")
+#File.write("#{Dir.pwd}/files/npp.exe", "")
+system("cd scripts && /bin/bash download-software.sh")
+
+Vagrant.configure("2") do |config|
+  config.vm.define "dc01.#{CONFIG[:domain_name]}" do |dc01_config|
+    dc01_config.vm.box = "box/base-box-winserver2019.box"
+
+    dc01_config.vm.hostname = "dc01"
+    dc01_config.vm.network "private_network", type: "static", ip: CONFIG[:dc01_ip]
+    dc01_config.vm.network "forwarded_port", guest: 5985, host: 5985, id: "winrm", auto_correct: true
+
+    dc01_config.vm.communicator = "winrm"
+    dc01_config.winrm.username = CONFIG[:windows_username]
+    dc01_config.winrm.password = CONFIG[:windows_password]
+    dc01_config.winrm.transport = "plaintext"
+    dc01_config.winrm.basic_auth_only = true
+
+    if Vagrant.has_plugin?("vagrant-vbguest") then
+        dc01_config.vbguest.auto_update = CONFIG[:install_guest_additions]
+    end
+
+    dc01_config.vm.provider "virtualbox" do |vb|
+      vb.memory = "4096"
+      vb.cpus = 2
+      vb.name = "dc01.#{CONFIG[:domain_name]}"
+      vb.customize ["modifyvm", :id, "--nat-localhostreachable1", "on"]
+      vb.customize ["modifyvm", :id, "--graphicscontroller", "vboxsvga"]
+      vb.customize ["modifyvm", :id, "--description", "Default credentials: #{CONFIG[:windows_username]}:#{CONFIG[:windows_password]}"]
+      vb.customize ["modifyvm", :id, "--groups", "/#{CONFIG[:domain_name]}"]
+    end
+
+    dc01_config.vm.provision "shell", path: "scripts/init.ps1", privileged: true
+    dc01_config.vm.provision "shell", path: "scripts/setup-dc.ps1", args: "-DomainName #{CONFIG[:domain_name]}", privileged: true
+    dc01_config.vm.provision "shell", reboot: true
+
+    dc01_config.vm.provision "shell", path: "scripts/dc-wait-for-ready.ps1", privileged: true
+    dc01_config.vm.provision "shell", path: "scripts/populate-ad.ps1", privileged: true
+    # MUST USE powershell_elevated_interactive: true to allow PsExec to run interactively
+    dc01_config.vm.provision "shell", path: "scripts/setup-gpo.ps1", args: "-DomainName #{CONFIG[:domain_name]}", privileged: true, powershell_elevated_interactive: true 
+    dc01_config.vm.provision "file", source: "files/sysmonconfig-export.xml", destination: "C:\\setup\\sysmonconfig-export.xml"
+    dc01_config.vm.provision "file", source: "files/Sysmon64.exe", destination: "C:\\setup\\Sysmon64.exe"
+    dc01_config.vm.provision "file", source: "files/PsExec64.exe", destination: "C:\\setup\\PsExec64.exe"
+    dc01_config.vm.provision "file", source: "files/BgInfo.exe", destination: "C:\\BgInfo\\BgInfo.exe"
+    dc01_config.vm.provision "file", source: "files/BgInfo.bgi", destination: "C:\\BgInfo\\BgInfo.bgi"
+    dc01_config.vm.provision "file", source: "files/googlechromestandaloneenterprise64.msi", destination: "C:\\setup\\googlechromestandaloneenterprise64.msi"
+    dc01_config.vm.provision "file", source: "files/npp.exe", destination: "C:\\setup\\npp.exe"
+    dc01_config.vm.provision "shell", path: "scripts/install-software.ps1", privileged: true
+    dc01_config.vm.provision "shell", path: "scripts/cleanup.ps1", privileged: true
+    dc01_config.vm.provision "shell", reboot: true
+  end
+
+  config.vm.define "mssql01.#{CONFIG[:domain_name]}" do |mssql01_config|
+    mssql01_config.vm.box = "box/base-box-winserver2019.box"
+
+    mssql01_config.vm.hostname = "mssql01"
+    mssql01_config.vm.network "private_network", type: "static", ip: CONFIG[:mssql01_ip]
+    mssql01_config.vm.network "forwarded_port", guest: 5985, host: 5985, id: "winrm", auto_correct: true
+
+    mssql01_config.vm.communicator = "winrm"
+    mssql01_config.winrm.username = CONFIG[:windows_username]
+    mssql01_config.winrm.password = CONFIG[:windows_password]
+    mssql01_config.winrm.transport = "plaintext"
+    mssql01_config.winrm.basic_auth_only = true
+
+    if Vagrant.has_plugin?("vagrant-vbguest") then
+        mssql01_config.vbguest.auto_update = CONFIG[:install_guest_additions]
+    end
+
+    mssql01_config.vm.provider "virtualbox" do |vb|
+      vb.memory = "4096"
+      vb.cpus = 2
+      vb.name = "mssql01.#{CONFIG[:domain_name]}"
+      vb.customize ["modifyvm", :id, "--nat-localhostreachable1", "on"]
+      vb.customize ["modifyvm", :id, "--graphicscontroller", "vboxsvga"]
+      vb.customize ["modifyvm", :id, "--description", "Default credentials: #{CONFIG[:windows_username]}:#{CONFIG[:windows_password]}"]
+      vb.customize ["modifyvm", :id, "--groups", "/#{CONFIG[:domain_name]}"]
+    end
+
+    mssql01_config.vm.provision "shell", path: "scripts/init.ps1", privileged: true
+    mssql01_config.vm.provision "shell", path: "scripts/set-domain-gw.ps1", args: "-DomainControllerIPAddress #{CONFIG[:dc01_ip]} -HostIPAddress #{CONFIG[:mssql01_ip]}", privileged: true
+    mssql01_config.vm.provision "shell", path: "scripts/join-domain.ps1", args: "-DomainName #{CONFIG[:domain_name]} -Username Administrator -Password #{CONFIG[:windows_password]}", privileged: true
+    mssql01_config.vm.provision "shell", reboot: true
+
+    mssql01_config.vm.provision "file", source: "files/SQL2019-SSEI-Expr.exe", destination: "C:\\setup\\SQL2019-SSEI-Expr.exe"
+    mssql01_config.vm.provision "shell", path: "scripts/setup-mssql.ps1", args: "-DomainName #{CONFIG[:domain_name]} -SvcUsername svc_mssql01 -SvcPassword P4ssw0rd1234!", privileged: true
+    mssql01_config.vm.provision "file", source: "files/sysmonconfig-export.xml", destination: "C:\\setup\\sysmonconfig-export.xml"
+    mssql01_config.vm.provision "file", source: "files/Sysmon64.exe", destination: "C:\\setup\\Sysmon64.exe"
+    mssql01_config.vm.provision "file", source: "files/BgInfo.exe", destination: "C:\\BgInfo\\BgInfo.exe"
+    mssql01_config.vm.provision "file", source: "files/BgInfo.bgi", destination: "C:\\BgInfo\\BgInfo.bgi"
+    mssql01_config.vm.provision "file", source: "files/googlechromestandaloneenterprise64.msi", destination: "C:\\setup\\googlechromestandaloneenterprise64.msi"
+    mssql01_config.vm.provision "file", source: "files/npp.exe", destination: "C:\\setup\\npp.exe"
+    mssql01_config.vm.provision "shell", path: "scripts/install-software.ps1", privileged: true
+    mssql01_config.vm.provision "shell", path: "scripts/cleanup.ps1", privileged: true
+    mssql01_config.vm.provision "shell", reboot: true
+  end
+
+  config.vm.define "mssql02.#{CONFIG[:domain_name]}" do |mssql02_config|
+    mssql02_config.vm.box = "box/base-box-winserver2016.box"
+
+    mssql02_config.vm.hostname = "mssql02"
+    mssql02_config.vm.network "private_network", type: "static", ip: CONFIG[:mssql02_ip]
+    mssql02_config.vm.network "forwarded_port", guest: 5985, host: 5985, id: "winrm", auto_correct: true
+
+    mssql02_config.vm.communicator = "winrm"
+    mssql02_config.winrm.username = CONFIG[:windows_username]
+    mssql02_config.winrm.password = CONFIG[:windows_password]
+    mssql02_config.winrm.transport = "plaintext"
+    mssql02_config.winrm.basic_auth_only = true
+
+    if Vagrant.has_plugin?("vagrant-vbguest") then
+        mssql02_config.vbguest.auto_update = CONFIG[:install_guest_additions]
+    end
+
+    mssql02_config.vm.provider "virtualbox" do |vb|
+      vb.memory = "4096"
+      vb.cpus = 2
+      vb.name = "mssql02.#{CONFIG[:domain_name]}"
+      vb.customize ["modifyvm", :id, "--nat-localhostreachable1", "on"]
+      vb.customize ["modifyvm", :id, "--graphicscontroller", "vboxsvga"]
+      vb.customize ["modifyvm", :id, "--description", "Default credentials: #{CONFIG[:windows_username]}:#{CONFIG[:windows_password]}"]
+      vb.customize ["modifyvm", :id, "--groups", "/#{CONFIG[:domain_name]}"]
+    end
+
+    mssql02_config.vm.provision "shell", path: "scripts/init.ps1", privileged: true
+    mssql02_config.vm.provision "shell", path: "scripts/set-domain-gw.ps1", args: "-DomainControllerIPAddress #{CONFIG[:dc01_ip]} -HostIPAddress #{CONFIG[:mssql02_ip]}", privileged: true
+    mssql02_config.vm.provision "shell", path: "scripts/join-domain.ps1", args: "-DomainName #{CONFIG[:domain_name]} -Username Administrator -Password #{CONFIG[:windows_password]}", privileged: true
+    mssql02_config.vm.provision "shell", reboot: true
+
+    mssql02_config.vm.provision "file", source: "files/SQL2019-SSEI-Expr.exe", destination: "C:\\setup\\SQL2019-SSEI-Expr.exe"
+    mssql02_config.vm.provision "shell", path: "scripts/setup-mssql.ps1", args: "-DomainName #{CONFIG[:domain_name]} -SvcUsername svc_mssql02 -SvcPassword P4ssw0rd1234!", privileged: true
+    mssql02_config.vm.provision "shell", reboot: true
+    mssql02_config.vm.provision "shell", path: "scripts/setup-mssql-link.ps1", args: "-DomainName #{CONFIG[:domain_name]} -SvcUsername svc_mssql02 -SvcPassword P4ssw0rd1234!", privileged: true
+    mssql02_config.vm.provision "file", source: "files/sysmonconfig-export.xml", destination: "C:\\setup\\sysmonconfig-export.xml"
+    mssql02_config.vm.provision "file", source: "files/Sysmon64.exe", destination: "C:\\setup\\Sysmon64.exe"
+    mssql02_config.vm.provision "file", source: "files/BgInfo.exe", destination: "C:\\BgInfo\\BgInfo.exe"
+    mssql02_config.vm.provision "file", source: "files/BgInfo.bgi", destination: "C:\\BgInfo\\BgInfo.bgi"
+    mssql02_config.vm.provision "file", source: "files/googlechromestandaloneenterprise64.msi", destination: "C:\\setup\\googlechromestandaloneenterprise64.msi"
+    mssql02_config.vm.provision "file", source: "files/npp.exe", destination: "C:\\setup\\npp.exe"
+    mssql02_config.vm.provision "shell", path: "scripts/install-software.ps1", privileged: true
+    mssql02_config.vm.provision "shell", path: "scripts/cleanup.ps1", privileged: true
+    mssql02_config.vm.provision "shell", reboot: true
+  end
+
+  config.vm.define "web01.#{CONFIG[:domain_name]}" do |web01_config|
+    web01_config.vm.box = "box/base-box-winserver2019.box"
+
+    web01_config.vm.hostname = "web01"
+    web01_config.vm.network "private_network", type: "static", ip: CONFIG[:web01_ip]
+    web01_config.vm.network "forwarded_port", guest: 5985, host: 5985, id: "winrm", auto_correct: true
+
+    web01_config.vm.communicator = "winrm"
+    web01_config.winrm.username = CONFIG[:windows_username]
+    web01_config.winrm.password = CONFIG[:windows_password]
+    web01_config.winrm.transport = "plaintext"
+    web01_config.winrm.basic_auth_only = true
+
+    if Vagrant.has_plugin?("vagrant-vbguest") then
+        web01_config.vbguest.auto_update = CONFIG[:install_guest_additions]
+    end
+
+    web01_config.vm.provider "virtualbox" do |vb|
+      vb.memory = "4096"
+      vb.cpus = 2
+      vb.name = "web01.#{CONFIG[:domain_name]}"
+      vb.customize ["modifyvm", :id, "--nat-localhostreachable1", "on"]
+      vb.customize ["modifyvm", :id, "--graphicscontroller", "vboxsvga"]
+      vb.customize ["modifyvm", :id, "--description", "Default credentials: #{CONFIG[:windows_username]}:#{CONFIG[:windows_password]}"]
+      vb.customize ["modifyvm", :id, "--groups", "/#{CONFIG[:domain_name]}"]
+    end
+
+    web01_config.vm.provision "shell", path: "scripts/init.ps1", privileged: true
+    web01_config.vm.provision "shell", path: "scripts/set-domain-gw.ps1", args: "-DomainControllerIPAddress #{CONFIG[:dc01_ip]} -HostIPAddress #{CONFIG[:web01_ip]}", privileged: true
+    web01_config.vm.provision "shell", path: "scripts/join-domain.ps1", args: "-DomainName #{CONFIG[:domain_name]} -Username Administrator -Password #{CONFIG[:windows_password]}", privileged: true
+    web01_config.vm.provision "shell", reboot: true
+
+    web01_config.vm.provision "shell", path: "scripts/setup-iis.ps1", args: "-DomainName: #{CONFIG[:domain_name]} -SvcUsername svc_iis03 -SvcPassword Svc1234!", privileged: true
+    web01_config.vm.provision "file", source: "files/sysmonconfig-export.xml", destination: "C:\\setup\\sysmonconfig-export.xml"
+    web01_config.vm.provision "file", source: "files/Sysmon64.exe", destination: "C:\\setup\\Sysmon64.exe"
+    web01_config.vm.provision "file", source: "files/BgInfo.exe", destination: "C:\\BgInfo\\BgInfo.exe"
+    web01_config.vm.provision "file", source: "files/BgInfo.bgi", destination: "C:\\BgInfo\\BgInfo.bgi"
+    web01_config.vm.provision "file", source: "files/googlechromestandaloneenterprise64.msi", destination: "C:\\setup\\googlechromestandaloneenterprise64.msi"
+    web01_config.vm.provision "file", source: "files/npp.exe", destination: "C:\\setup\\npp.exe"
+    web01_config.vm.provision "shell", path: "scripts/install-software.ps1", privileged: true
+    web01_config.vm.provision "shell", path: "scripts/cleanup.ps1", privileged: true
+    web01_config.vm.provision "shell", reboot: true
+  end
+
+
+  config.vm.define "adcs01.#{CONFIG[:domain_name]}" do |adcs01_config|
+    adcs01_config.vm.box = "box/base-box-winserver2019.box"
+
+    adcs01_config.vm.hostname = "adcs01"
+    adcs01_config.vm.network "private_network", type: "static", ip: CONFIG[:adcs01_ip]
+    adcs01_config.vm.network "forwarded_port", guest: 5985, host: 5985, id: "winrm", auto_correct: true
+
+    adcs01_config.vm.communicator = "winrm"
+    adcs01_config.winrm.username = CONFIG[:windows_username]
+    adcs01_config.winrm.password = CONFIG[:windows_password]
+    adcs01_config.winrm.transport = "plaintext"
+    adcs01_config.winrm.basic_auth_only = true
+
+    if Vagrant.has_plugin?("vagrant-vbguest") then
+        adcs01_config.vbguest.auto_update = CONFIG[:install_guest_additions]
+    end
+
+    adcs01_config.vm.provider "virtualbox" do |vb|
+      vb.memory = "4096"
+      vb.cpus = 2
+      vb.name = "adcs01.#{CONFIG[:domain_name]}"
+      vb.customize ["modifyvm", :id, "--nat-localhostreachable1", "on"]
+      vb.customize ["modifyvm", :id, "--graphicscontroller", "vboxsvga"]
+      vb.customize ["modifyvm", :id, "--description", "Default credentials: #{CONFIG[:windows_username]}:#{CONFIG[:windows_password]}"]
+      vb.customize ["modifyvm", :id, "--groups", "/#{CONFIG[:domain_name]}"]
+    end
+
+    adcs01_config.vm.provision "shell", path: "scripts/init.ps1", privileged: true
+    adcs01_config.vm.provision "shell", path: "scripts/set-domain-gw.ps1", args: "-DomainControllerIPAddress #{CONFIG[:dc01_ip]} -HostIPAddress #{CONFIG[:adcs01_ip]}", privileged: true
+    adcs01_config.vm.provision "shell", path: "scripts/join-domain.ps1", args: "-DomainName #{CONFIG[:domain_name]} -Username Administrator -Password #{CONFIG[:windows_password]}", privileged: true
+    adcs01_config.vm.provision "shell", reboot: true
+
+    adcs01_config.vm.provision "shell", path: "scripts/setup-adcs.ps1", privileged: true
+    adcs01_config.vm.provision "shell", reboot: true
+
+    adcs01_config.vm.provision "file", source: "files/adcs/ADCSTemplate", destination: "C:\\Program Files\\WindowsPowerShell\\Modules\\ADCSTemplate"
+    adcs01_config.vm.provision "file", source: "files/adcs/templates", destination: "C:\\setup"
+    adcs01_config.vm.provision "file", source: "files/PsExec64.exe", destination: "C:\\setup\\PsExec64.exe"
+
+    # MUST USE powershell_elevated_interactive: true to allow PsExec to run interactively
+    adcs01_config.vm.provision "shell", inline: "Start-Sleep -Seconds 300", privileged: true
+    adcs01_config.vm.provision "shell", path: "scripts/setup-adcs-esc.ps1", privileged: true, powershell_elevated_interactive: true 
+
+    adcs01_config.vm.provision "file", source: "files/sysmonconfig-export.xml", destination: "C:\\setup\\sysmonconfig-export.xml"
+    adcs01_config.vm.provision "file", source: "files/Sysmon64.exe", destination: "C:\\setup\\Sysmon64.exe"
+    adcs01_config.vm.provision "file", source: "files/BgInfo.exe", destination: "C:\\BgInfo\\BgInfo.exe"
+    adcs01_config.vm.provision "file", source: "files/BgInfo.bgi", destination: "C:\\BgInfo\\BgInfo.bgi"
+    adcs01_config.vm.provision "file", source: "files/googlechromestandaloneenterprise64.msi", destination: "C:\\setup\\googlechromestandaloneenterprise64.msi"
+    adcs01_config.vm.provision "file", source: "files/npp.exe", destination: "C:\\setup\\npp.exe"
+    adcs01_config.vm.provision "shell", path: "scripts/install-software.ps1", privileged: true
+    adcs01_config.vm.provision "shell", path: "scripts/cleanup.ps1", privileged: true
+    adcs01_config.vm.provision "shell", reboot: true
+  end
+
+  config.vm.define "srv01.#{CONFIG[:domain_name]}" do |srv01_config|
+    srv01_config.vm.box = "box/base-box-winserver2016.box"
+
+    srv01_config.vm.hostname = "srv01"
+    srv01_config.vm.network "private_network", type: "static", ip: CONFIG[:srv01_ip]
+    srv01_config.vm.network "forwarded_port", guest: 5985, host: 5985, id: "winrm", auto_correct: true
+
+    srv01_config.vm.communicator = "winrm"
+    srv01_config.winrm.username = CONFIG[:windows_username]
+    srv01_config.winrm.password = CONFIG[:windows_password]
+    srv01_config.winrm.transport = "plaintext"
+    srv01_config.winrm.basic_auth_only = true
+
+    if Vagrant.has_plugin?("vagrant-vbguest") then
+        srv01_config.vbguest.auto_update = CONFIG[:install_guest_additions]
+    end
+
+    srv01_config.vm.provider "virtualbox" do |vb|
+      vb.memory = "4096"
+      vb.cpus = 2
+      vb.name = "srv01.#{CONFIG[:domain_name]}"
+      vb.customize ["modifyvm", :id, "--nat-localhostreachable1", "on"]
+      vb.customize ["modifyvm", :id, "--graphicscontroller", "vboxsvga"]
+      vb.customize ["modifyvm", :id, "--description", "Default credentials: #{CONFIG[:windows_username]}:#{CONFIG[:windows_password]}"]
+      vb.customize ["modifyvm", :id, "--groups", "/#{CONFIG[:domain_name]}"]
+    end
+
+    srv01_config.vm.provision "shell", path: "scripts/init.ps1", privileged: true
+    srv01_config.vm.provision "shell", path: "scripts/set-domain-gw.ps1", args: "-DomainControllerIPAddress #{CONFIG[:dc01_ip]} -HostIPAddress #{CONFIG[:srv01_ip]}", privileged: true
+    srv01_config.vm.provision "shell", path: "scripts/join-domain.ps1", args: "-DomainName #{CONFIG[:domain_name]} -Username Administrator -Password #{CONFIG[:windows_password]}", privileged: true
+    srv01_config.vm.provision "shell", reboot: true
+
+    srv01_config.vm.provision "file", source: "files/sysmonconfig-export.xml", destination: "C:\\setup\\sysmonconfig-export.xml"
+    srv01_config.vm.provision "file", source: "files/Sysmon64.exe", destination: "C:\\setup\\Sysmon64.exe"
+    srv01_config.vm.provision "file", source: "files/BgInfo.exe", destination: "C:\\BgInfo\\BgInfo.exe"
+    srv01_config.vm.provision "file", source: "files/BgInfo.bgi", destination: "C:\\BgInfo\\BgInfo.bgi"
+    srv01_config.vm.provision "file", source: "files/googlechromestandaloneenterprise64.msi", destination: "C:\\setup\\googlechromestandaloneenterprise64.msi"
+    srv01_config.vm.provision "file", source: "files/npp.exe", destination: "C:\\setup\\npp.exe"
+    srv01_config.vm.provision "shell", path: "scripts/install-software.ps1", privileged: true
+    srv01_config.vm.provision "shell", path: "scripts/cleanup.ps1", privileged: true
+    srv01_config.vm.provision "shell", reboot: true
+  end
+
+  config.vm.define "workstation01.#{CONFIG[:domain_name]}" do |workstation01_config|
+    workstation01_config.vm.box = "box/base-box-win10-22h2.box"
+
+    workstation01_config.vm.hostname = "workstation01"
+    workstation01_config.vm.network "private_network", type: "static", ip: CONFIG[:workstation01_ip]
+    workstation01_config.vm.network "forwarded_port", guest: 5985, host: 5985, id: "winrm", auto_correct: true
+
+    workstation01_config.vm.communicator = "winrm"
+    workstation01_config.winrm.username = CONFIG[:windows_username]
+    workstation01_config.winrm.password = CONFIG[:windows_password]
+    workstation01_config.winrm.transport = "plaintext"
+
+    if Vagrant.has_plugin?("vagrant-vbguest") then
+        workstation01_config.vbguest.auto_update = CONFIG[:install_guest_additions]
+    end
+
+    workstation01_config.vm.provider "virtualbox" do |vb|
+      vb.memory = "4096"
+      vb.cpus = 2
+      vb.name = "workstation01.#{CONFIG[:domain_name]}"
+      vb.customize ["modifyvm", :id, "--nat-localhostreachable1", "on"]
+      vb.customize ["modifyvm", :id, "--graphicscontroller", "vboxsvga"]
+      vb.customize ["modifyvm", :id, "--description", "Default credentials: #{CONFIG[:windows_username]}:#{CONFIG[:windows_password]}"]
+      vb.customize ["modifyvm", :id, "--groups", "/#{CONFIG[:domain_name]}"]
+    end
+
+    workstation01_config.vm.provision "shell", path: "scripts/init.ps1", privileged: true
+    workstation01_config.vm.provision "shell", path: "scripts/set-domain-gw.ps1", args: "-DomainControllerIPAddress #{CONFIG[:dc01_ip]} -HostIPAddress #{CONFIG[:workstation01_ip]}", privileged: true
+    workstation01_config.vm.provision "shell", path: "scripts/join-domain.ps1", args: "-DomainName #{CONFIG[:domain_name]} -Username Administrator -Password #{CONFIG[:windows_password]}", privileged: true
+    workstation01_config.vm.provision "file", source: "files/sysmonconfig-export.xml", destination: "C:\\setup\\sysmonconfig-export.xml"
+    workstation01_config.vm.provision "file", source: "files/Sysmon64.exe", destination: "C:\\setup\\Sysmon64.exe"
+    workstation01_config.vm.provision "file", source: "files/BgInfo.exe", destination: "C:\\BgInfo\\BgInfo.exe"
+    workstation01_config.vm.provision "file", source: "files/BgInfo.bgi", destination: "C:\\BgInfo\\BgInfo.bgi"
+    workstation01_config.vm.provision "file", source: "files/googlechromestandaloneenterprise64.msi", destination: "C:\\setup\\googlechromestandaloneenterprise64.msi"
+    workstation01_config.vm.provision "file", source: "files/npp.exe", destination: "C:\\setup\\npp.exe"
+    workstation01_config.vm.provision "shell", path: "scripts/install-software.ps1", privileged: true
+    workstation01_config.vm.provision "shell", path: "scripts/cleanup.ps1", privileged: true
+    workstation01_config.vm.provision "shell", reboot: true
+  end
+
+  config.vm.define "srv02.#{CONFIG[:domain_name]}" do |srv02_config|
+    srv02_config.vm.box = "box/base-box-ubuntu-20.04-server.box"
+
+    srv02_config.vm.hostname = "srv02"
+    srv02_config.vm.network "private_network", type: "static", ip: CONFIG[:srv02_ip]
+
+    srv02_config.vm.communicator = "ssh"
+    srv02_config.ssh.username = CONFIG[:linux_username]
+    srv02_config.ssh.password = CONFIG[:linux_password]
+
+    if Vagrant.has_plugin?("vagrant-vbguest") then
+        config.vbguest.auto_update = false
+    end
+
+    srv02_config.vm.provider "virtualbox" do |vb|
+      vb.memory = "4096"
+      vb.cpus = 2
+      vb.name = "srv02.#{CONFIG[:domain_name]}"
+      vb.customize ["modifyvm", :id, "--description", "Default credentials: #{CONFIG[:linux_username]}:#{CONFIG[:linux_password]}, ubuntu:ubuntu"]
+      vb.customize ["modifyvm", :id, "--groups", "/#{CONFIG[:domain_name]}"]
+    end
+
+    srv02_config.vm.provision "shell", path: "scripts/join-domain.sh", args: "-d '#{CONFIG[:domain_name]}' -n '#{CONFIG[:dc01_ip]}' -i '#{CONFIG[:srv02_ip]}' -p '#{CONFIG[:windows_password]}'", privileged: true
+    srv02_config.vm.provision "shell", reboot: true
+  end
+
+  config.vm.define "attackbox.#{CONFIG[:domain_name]}" do |attackbox_config|
+    attackbox_config.vm.box = "box/base-box-kali-top10-xfce.box"
+    
+    attackbox_config.vm.hostname = "attackbox"
+    attackbox_config.vm.network "private_network", type: "static", ip: CONFIG[:attackbox_ip]
+
+    attackbox_config.vm.communicator = "ssh"
+    attackbox_config.ssh.username = CONFIG[:linux_username]
+    attackbox_config.ssh.password = CONFIG[:linux_password]
+
+    if Vagrant.has_plugin?("vagrant-vbguest") then
+        config.vbguest.auto_update = false
+    end
+
+    attackbox_config.vm.provider "virtualbox" do |vb|
+      vb.memory = "4096"
+      vb.cpus = 2
+      vb.name = "attackbox.#{CONFIG[:domain_name]}"
+      vb.customize ["modifyvm", :id, "--description", "Default credentials: #{CONFIG[:linux_username]}:#{CONFIG[:linux_password]}, kali:kali"]
+      vb.customize ["modifyvm", :id, "--groups", "/#{CONFIG[:domain_name]}"]
+    end
+
+    attackbox_config.vm.provision "shell", reboot: true
+  end
+end

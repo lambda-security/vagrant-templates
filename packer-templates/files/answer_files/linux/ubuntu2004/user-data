@@ -1,0 +1,67 @@
+#cloud-config
+autoinstall:
+  version: 1
+  early-commands:
+    - systemctl stop ssh
+  apt:
+    disable_components: [restricted,multiverse]
+    disable_suites: [backports,security]
+    geoip: false
+    preserve_sources_list: false
+    primary:
+    - arches:
+      - amd64
+      - i386
+      uri: http://archive.ubuntu.com/ubuntu
+    - arches:
+      - default
+      uri: http://ports.ubuntu.com/ubuntu-ports
+    preferences:
+      - package: "*"
+        pin: "release a=focal-updates"
+        pin-priority: 200
+  user-data:
+    disable_root: false
+  identity:
+    hostname: ubuntu-server2004
+    username: ubuntu
+    # python3 -c 'import crypt; print(crypt.crypt("ubuntu", crypt.mksalt(crypt.METHOD_SHA512)))'
+    password: "$6$IpxVmFoVPu7Xga12$eS4zz6zzQ.zj6/IGqZH5YT2lKxzS7hnxyfo27VEQ1l.i1miOeYjStMtc8VA7VTwr5cD5X2hx6ABW6HtWAL7pu1"
+  kernel:
+    package: linux-generic
+  keyboard:
+    layout: us
+    variant: ''
+  locale: en_US.UTF-8
+#  network:
+#    network:
+#      version: 2
+#      ethernets:
+#        zz-all-en:
+#          match:
+#            name: "en*"
+#          dhcp4: true
+#          dhcp-identifier: mac
+#        zz-all-eth:
+#          match:
+#            name: "eth*"
+#          dhcp4: true
+#          dhcp-identifier: mac
+  ssh:
+    allow-pw: true
+    authorized-keys: []
+    install-server: true
+  refresh-installer:
+    update: false
+  storage:
+    layout:
+      name: lvm
+  updates: all 
+  late-commands:
+    - rm -rf /target/etc/apt/preferences.d/90curtin.pref
+    - curtin in-target --target=/target -- lvextend --extents +100%FREE /dev/mapper/ubuntu--vg-ubuntu--lv
+    - curtin in-target --target=/target -- resize2fs /dev/mapper/ubuntu--vg-ubuntu--lv
+    # python3 -c 'import crypt; print(crypt.crypt("root", crypt.mksalt(crypt.METHOD_SHA512)))'
+    - curtin in-target --target=/target -- usermod -p '$6$JZiMmXbw32MTwOXi$fLPRAaZOqu6QYnf0Te0r7OD5FwnweWaS0g7ct9EcU3GczmpdWbHfQoLrI0vHTGTbuU4YDaMCW.lLckuBJ0E9O0' root
+    - echo 'PermitRootLogin yes' >> /target/etc/ssh/sshd_config
+    - chmod -x /target/etc/update-motd.d/*

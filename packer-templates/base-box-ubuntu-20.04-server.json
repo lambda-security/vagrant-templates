@@ -1,0 +1,84 @@
+{
+  "variables": {
+    "iso_url": "https://old-releases.ubuntu.com/releases/20.04/ubuntu-20.04-live-server-amd64.iso",
+    "iso_path": "{{pwd}}/iso/ubuntu-20.04-live-server-amd64.iso",
+    "iso_sha256": "sha256:caf3fd69c77c439f162e2ba6040e9c320c4ff0d69aad1340a514319a9264df9f",
+    "timestamp": "{{isotime `2006-01-02`}}",
+    "headless": "false",
+    "boot_wait": "5s",
+    
+    "name": "base-box-ubuntu-20.04-server",
+    "cpu": "2",
+    "cores": "2",
+    "ram": "2048",
+    "disk_size": "102400",
+    "virtualbox_guest_os_type": "Ubuntu_64",
+    "communicator_username": "root",
+    "communicator_password": "root",
+    "lowpriv_user": "ubuntu"
+  },
+
+  "builders": [
+    {
+      "type": "virtualbox-iso",
+      "format": "ova",
+      "headless": "{{user `headless`}}",
+      "name": "virtualbox",
+      "vm_name": "{{user `name`}}",
+      "disk_size": "{{user `disk_size`}}",
+      "guest_os_type": "{{user `virtualbox_guest_os_type`}}",
+      "communicator": "ssh",
+      "ssh_username": "{{user `communicator_username`}}",
+      "ssh_password": "{{user `communicator_password`}}",
+      "ssh_pty": true,
+      "ssh_timeout": "60m",
+      "ssh_handshake_attempts": "20",
+      "shutdown_command": "shutdown -P now",
+      "boot_wait": "{{user `boot_wait`}}",
+      "boot_command": [
+        "<enter><enter><f6><esc><wait> ",
+        "autoinstall ds=nocloud-net;seedfrom=http://{{.HTTPIP}}:{{.HTTPPort}}/",
+        "<enter><wait>"
+      ],
+      "iso_urls": [
+        "{{user `iso_path`}}",
+        "{{user `iso_url`}}"
+      ],
+      "iso_checksum": "{{user `iso_sha256`}}",
+      "iso_target_path": "{{user `iso_path`}}",
+      "http_directory": "files/answer_files/linux/ubuntu2004",
+      "output_directory": "virtualbox_output",
+      "guest_additions_mode": "disable",
+      "vboxmanage": [
+        ["modifyvm", "{{.Name}}", "--nat-localhostreachable1", "on"],
+        ["modifyvm", "{{.Name}}", "--memory", "{{user `ram`}}"],
+        ["modifyvm", "{{.Name}}", "--cpus", "{{user `cpu`}}"],
+        ["modifyvm", "{{.Name}}", "--vram", "256"],
+        ["modifyvm", "{{.Name}}", "--audio-driver", "none"]
+      ],
+      "export_opts": [
+        "--manifest",
+        "--vsys", "0"
+      ]
+    }
+  ],
+
+  "provisioners": [
+    {
+      "type": "shell",
+      "inline": ["cloud-init status --wait"]
+    },
+    {
+      "type": "shell",
+      "script": "files/scripts/linux/sysprep.sh"
+    }
+  ],
+
+  "post-processors": [
+    {
+      "type": "vagrant",
+      "keep_input_artifact": false,
+      "output": "box/{{user `name`}}.box"
+    }
+  ]
+}

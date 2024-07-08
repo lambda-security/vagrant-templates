@@ -16,6 +16,8 @@ This Vagrantfile sets up a vulnerable Active Directory environment containing:
 | workstation01 | no-role workstation                                                                                                   | Windows 10       |
 | attackbox     | attackbox                                                                                                             | Kali Linux top10 |
 
+![active-directory](img/environment.png)
+
 ## Configuration
 
 Configuration is set via `config.rb` and by default uses the domain name `CONTOSO.COM` and an ip range of 192.168.56.50 - 192.168.56.60 for virtual machines.
@@ -61,7 +63,27 @@ $ ./active-directory.sh
 $ ./active-directory.sh -u all
 ``` 
 
-## Snapshots
+## Destroying
+
+```
+$ ./active-directory.sh -z all
+``` 
+
+## Running
+
+- Bring up entire environment
+
+```
+$ ./active-directory.sh -u all
+``` 
+
+- Bring up environment selected virtual machines
+
+```
+$ ./active-directory.sh -u dc01.domain.com,mssql01.domain.com
+``` 
+
+## Snapshotting
 
 - Create snapshot
 

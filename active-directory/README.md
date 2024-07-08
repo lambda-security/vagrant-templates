@@ -26,3 +26,51 @@ Default local credentials, configurable via `config.rb`:
 
 - Windows: `vagrant:vagrant`
 - Linux: `root:root`
+
+## Usage
+
+```
+$ ./active-directory.sh
+-u|--up                bring environment up, build the first time
+                       specify multiple vms by comma or "all"
+
+-d|--down              bring environment down
+                       specify multiple vms by comma or "all"
+
+-s|--snapshot <name>   take environment snapshot with <name>
+
+-r|--restore <name>    restore environment snapshot with <name>
+
+-x|--delete <name>     delete envionment snapshot with <name>
+
+-l|--list              list snapshots
+
+--status               vagrant environment status
+
+-z|--destroy           destroy environment
+                       specify multiple vms by comma or "all"
+
+-f|--force             force
+
+-h|--help              print this help message and exit
+```
+
+## Building 
+
+```
+$ ./active-directory.sh -u all
+``` 
+
+## Snapshots
+
+- Create snapshot
+
+```
+$ ./active-directory.sh -s clean01
+``` 
+
+- Restore snapshot
+
+```
+$ ./active-directory.sh -r clean01
+``` 

@@ -27,6 +27,8 @@ This Vagrantfile sets up a vulnerable Active Directory environment containing:
 | workstation01 | no-role workstation                                                                                                   | Windows 10       |
 | attackbox     | attackbox                                                                                                             | Kali Linux top10 |
 
+Building and running the full environment requires ~100GB of disk space and ~32GB ram.
+
 ![active-directory](img/environment.png)
 
 ## Usage
